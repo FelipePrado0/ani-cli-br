@@ -152,6 +152,25 @@ cleanup() {
     rm -f "${histfile}.new" # remove temp logfile
 }
 
+# CACHE (search/episode lists only - never video links, those are signed/short-lived)
+
+cache_key() { printf "%s" "$1" | cksum | cut -d " " -f 1; }
+
+cache_get() {
+    [ "$cache_ttl_min" -gt 0 ] || return 1
+    _f="$cache_dir/$(cache_key "$1")"
+    [ -f "$_f" ] || return 1
+    [ -n "$(find "$_f" -mmin "-${cache_ttl_min}" 2>/dev/null)" ] || return 1
+    cat "$_f"
+}
+
+cache_set() {
+    [ "$cache_ttl_min" -gt 0 ] || return 0
+    [ -z "$2" ] && return 0
+    mkdir -p "$cache_dir"
+    printf "%s" "$2" >"$cache_dir/$(cache_key "$1")"
+}
+
 # SCRAPING
 
 #shellcheck disable=SC2086
@@ -161,13 +180,17 @@ anidb_curl() {
 
 # search the query and give results. format is (id \t name)
 anidb_search() {
+    _ck="anidb_search|$1"
+    cache_get "$_ck" && return 0
     #shellcheck disable=SC2059
     _page="$(anidb_curl "$(printf "$search_api" "$1")" | tr '\n' ' ' | sed 's|<a href|\n<a href|g')"
     if printf "%s" "$_page" | grep -qi "Just a moment"; then
         [ "$curl_exe" = "curl" ] && die "Blocked by cloudflare. Try installing curl-impersonate"
         die "Blocked by cloudflare."
     fi
-    printf "%s" "$_page" | sed -nE 's|.*anime/([a-z0-9-]+-[0-9]+)".*alt="([^"]+)".*|\1\t\2|p' | sed -e "s|&#039;|'|g" -e 's|&quot;|"|g' -e "s|&amp;|\&|g"
+    _result="$(printf "%s" "$_page" | sed -nE 's|.*anime/([a-z0-9-]+-[0-9]+)".*alt="([^"]+)".*|\1\t\2|p' | sed -e "s|&#039;|'|g" -e 's|&quot;|"|g' -e "s|&amp;|\&|g")"
+    cache_set "$_ck" "$_result"
+    printf "%s" "$_result"
 }
 
 # extract mal_id and seasons metadata
@@ -181,9 +204,13 @@ anidb_desc() {
 
 # get the episodes list of the selected anime. format is (id \t ep_no)
 anidb_episodes() {
+    _ck="anidb_episodes|$1"
+    cache_get "$_ck" && return 0
     #shellcheck disable=SC2059
     _page="$(anidb_curl "$(printf "$episodes_api" "${1##*-}")")"
-    printf "%s" "$_page" | sed 's|},{|}\n{|g' | sed -nE 's|.*"id":([0-9]+).*"number":([0-9]+).*|\1\t\2|p'
+    _result="$(printf "%s" "$_page" | sed 's|},{|}\n{|g' | sed -nE 's|.*"id":([0-9]+).*"number":([0-9]+).*|\1\t\2|p')"
+    cache_set "$_ck" "$_result"
+    printf "%s" "$_result"
 }
 
 # extract the individual m3u8 links from response of embed urls
@@ -204,6 +231,8 @@ anidb_m3u8() {
 
 # search the query and give results. format is (slug \t title). $2 = mode (sub/dub)
 animefire_search() {
+    _ck="animefire_search|$1|$2"
+    cache_get "$_ck" && return 0
     _query="$(printf "%s" "$1" | tr '+' ' ')"
     _page="$(anidb_curl -X POST "https://animefire.io/proc/search" --data-urlencode "search_string=${_query}")"
     _result="$(printf "%s" "$_page" | tr '\n' ' ' | sed 's|<a href|\n<a href|g' |
@@ -213,18 +242,24 @@ animefire_search() {
             -e 's|&atilde;|ã|g' -e 's|&otilde;|õ|g' -e 's|&ccedil;|ç|g' -e 's|&ecirc;|ê|g' -e 's|&acirc;|â|g' -e 's|&ocirc;|ô|g' |
         sed -E 's/ - Todos os Episódios$//')"
     if [ "$2" = "dub" ]; then
-        printf "%s\n" "$_result" | grep -i "dublado"
+        _result="$(printf "%s\n" "$_result" | grep -i "dublado")"
     else
-        printf "%s\n" "$_result" | grep -vi "dublado"
+        _result="$(printf "%s\n" "$_result" | grep -vi "dublado")"
     fi
+    cache_set "$_ck" "$_result"
+    printf "%s" "$_result"
 }
 
 # get the episodes list of the selected anime. format is (ep_no)
 animefire_episodes() {
+    _ck="animefire_episodes|$1"
+    cache_get "$_ck" && return 0
     _base="$(printf "%s" "$1" | sed 's/-todos-os-episodios$//')"
-    anidb_curl "https://animefire.io/animes/${1}" |
+    _result="$(anidb_curl "https://animefire.io/animes/${1}" |
         grep -oE "href=\"https://animefire\.io/animes/${_base}/[0-9]+\"" |
-        sed -E 's|.*/([0-9]+)"$|\1|' | sort -n -u
+        sed -E 's|.*/([0-9]+)"$|\1|' | sort -n -u)"
+    cache_set "$_ck" "$_result"
+    printf "%s" "$_result"
 }
 
 # get the direct video links for an episode. format is (label >link)
@@ -475,6 +510,8 @@ agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
 mode="${ANI_CLI_MODE:-sub}"
 provider="${ANI_CLI_PROVIDER:-}"
 curl_timeout="${ANI_CLI_TIMEOUT:-10}"
+cache_dir="${ANI_CLI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ani-cli}"
+cache_ttl_min="${ANI_CLI_CACHE_TTL:-5}"
 download_dir="${ANI_CLI_DOWNLOAD_DIR:-.}"
 log_episode="${ANI_CLI_LOG:-1}"
 quality="${ANI_CLI_QUALITY:-best}"
