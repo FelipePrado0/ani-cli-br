@@ -368,9 +368,13 @@ show_status() {
 notify_new_episodes() {
     _state_dir="${cache_dir}/watch_state"
     mkdir -p "$_state_dir"
-    while IFS="	" read -r _hist_ep _hist_id _hist_title; do
+    while IFS="	" read -r _hist_ep _hist_id _hist_title _hist_provider; do
         [ -z "$_hist_id" ] && continue
-        _cur_count=$(anidb_episodes "$_hist_id" | wc -l | tr -d "[:space:]")
+        [ -z "$_hist_provider" ] && _hist_provider=anidb
+        case "$_hist_provider" in
+            animefire) _cur_count=$(animefire_episodes "$_hist_id" | wc -l | tr -d "[:space:]") ;;
+            *) _cur_count=$(anidb_episodes "$_hist_id" | wc -l | tr -d "[:space:]") ;;
+        esac
         _state_file="$_state_dir/$(cache_key "$_hist_id")"
         _prev_count=0
         [ -f "$_state_file" ] && _prev_count=$(cat "$_state_file")
@@ -395,9 +399,10 @@ notify_new_episodes() {
 
 backup_old_hist() {
     backupfile="${histfile}.v4"
-    while IFS="	" read -r ep_no anime_id anime_title; do
+    while IFS="	" read -r ep_no anime_id anime_title hist_provider; do
+        [ -z "$hist_provider" ] && hist_provider=anidb # pre-multi-provider entries default to anidb
         case "$anime_id" in
-            *-*) printf "%s\t%s\t%s\n" "$ep_no" "$anime_id" "$anime_title" >>"${histfile}.new" ;;
+            *-*) printf "%s\t%s\t%s\t%s\n" "$ep_no" "$anime_id" "$anime_title" "$hist_provider" >>"${histfile}.new" ;;
             *) printf "%s\t%s\t%s\n" "$ep_no" "$anime_id" "$anime_title" >>"$backupfile" ;;
         esac
     done <"$histfile"
@@ -405,9 +410,12 @@ backup_old_hist() {
 }
 
 process_hist_entry() {
-    ep_list=$(anidb_episodes "$anime_id" | cut -f 2)
+    case "$hist_provider" in
+        animefire) ep_list=$(animefire_episodes "$anime_id") ;;
+        *) ep_list=$(anidb_episodes "$anime_id" | cut -f 2) ;;
+    esac
     ep_no=$(printf "%s" "$ep_list" | sed -n "/^${ep_no}$/{n;p;}") 2>/dev/null
-    [ -n "$ep_no" ] && printf "%s\t%s - episode %s\n" "$anime_id" "$anime_title" "$ep_no"
+    [ -n "$ep_no" ] && printf "%s\t%s - episode %s\t%s\n" "$anime_id" "$anime_title" "$ep_no" "$hist_provider"
 }
 
 # warns if $ep_no was already watched (or passed) for $anime_id, per histfile
@@ -427,13 +435,14 @@ check_rewatch() {
 }
 
 update_history() {
+    _hist_provider_out="${provider:-anidb}"
     if grep -q "	${anime_id}	" "$histfile"; then
         # escape sed special chars in replacement: & and \ and delimiter |
         safe_title=$(printf "%s" "$anime_title" | sed 's|[&\|]|\\&|g')
-        sed -E "s|^[^	]+	${anime_id}	[^	]+$|${ep_no}	${anime_id}	${safe_title}|" "$histfile" >"${histfile}.new"
+        sed -E "s|^[^	]+	${anime_id}	[^	]+(	[^	]*)?\$|${ep_no}	${anime_id}	${safe_title}	${_hist_provider_out}|" "$histfile" >"${histfile}.new"
     else
         cp "$histfile" "${histfile}.new"
-        printf "%s\t%s\t%s\n" "$ep_no" "$anime_id" "$anime_title" >>"${histfile}.new"
+        printf "%s\t%s\t%s\t%s\n" "$ep_no" "$anime_id" "$anime_title" "$_hist_provider_out" >>"${histfile}.new"
     fi
     mv "${histfile}.new" "$histfile"
 }
@@ -648,7 +657,7 @@ while [ $# -gt 0 ]; do
         --import)
             [ $# -lt 2 ] && die "missing argument!"
             [ -f "$2" ] || die "File not found: $2"
-            while IFS="	" read -r ep_no anime_id anime_title; do
+            while IFS="	" read -r ep_no anime_id anime_title provider; do
                 [ -n "$anime_id" ] && update_history
             done <"$2"
             info "History imported from $2"
@@ -711,19 +720,26 @@ trap 'cleanup; exit 1' INT HUP TERM
 # searching
 case "$source" in
     history)
-        provider=anidb # history isn't provider-aware yet
         backup_old_hist
-        anime_list=$(while read -r ep_no anime_id anime_title; do process_hist_entry & done <"$histfile")
+        anime_list=$(while IFS="	" read -r ep_no anime_id anime_title hist_provider; do
+            [ -z "$hist_provider" ] && hist_provider=anidb
+            process_hist_entry &
+        done <"$histfile")
         wait
         [ -z "$anime_list" ] && die "No unwatched series in history!"
         if [ "$marathon" = 1 ]; then
-            printf "%s\n" "$anime_list" | while IFS="	" read -r anime_id _rest; do
+            printf "%s\n" "$anime_list" | while IFS="	" read -r anime_id title_ep provider; do
                 [ -z "$anime_id" ] && continue
-                anime_title=$(printf "%s" "$_rest" | sed 's| - episode.*||')
-                ep_no=$(printf "%s" "$_rest" | sed -nE 's/.*- episode (.+)$/\1/p')
+                [ -z "$provider" ] && provider=anidb
+                anime_title=$(printf "%s" "$title_ep" | sed 's| - episode.*||')
+                ep_no=$(printf "%s" "$title_ep" | sed -nE 's/.*- episode (.+)$/\1/p')
                 [ -z "$ep_no" ] && continue
-                episode_maps="$(anidb_episodes "$anime_id")"
-                ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
+                if [ "$provider" = "animefire" ]; then
+                    ep_list="$(animefire_episodes "$anime_id")"
+                else
+                    episode_maps="$(anidb_episodes "$anime_id")"
+                    ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
+                fi
                 canon_ep_no="$(printf "%s" "$ep_list" | sed -n "/^${ep_no}$/=")"
                 info "Marathon: playing ${anime_title} episode ${ep_no}..."
                 play_episode
@@ -734,11 +750,17 @@ case "$source" in
         [ -z "${index##*[!0-9]*}" ] || anime_id=$(printf "%s" "$anime_list" | sed -n "${index}p" | cut -f 1)
         [ -z "$anime_id" ] && exit 1
         anime_title=$(printf "%s" "$anime_list" | grep "^$anime_id	" | cut -f 2 | sed 's| - episode.*||')
+        provider=$(printf "%s" "$anime_list" | grep "^$anime_id	" | cut -f 3)
+        [ -z "$provider" ] && provider=anidb
         show_status "$anime_title"
-        anidb_desc "$anime_id" || true
-        episode_maps="$(anidb_episodes "$anime_id")"
-        ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
-        ep_no=$(printf "%s" "$anime_list" | grep "^$anime_id	" | sed -nE 's/.*- episode (.+)$/\1/p')
+        if [ "$provider" = "animefire" ]; then
+            ep_list="$(animefire_episodes "$anime_id")"
+        else
+            anidb_desc "$anime_id" || true
+            episode_maps="$(anidb_episodes "$anime_id")"
+            ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
+        fi
+        ep_no=$(printf "%s" "$anime_list" | grep "^$anime_id	" | sed -nE 's/.*- episode ([^	]+).*/\1/p')
         ;;
     *)
         if [ "$menu_program" = "fzf" ]; then
