@@ -72,7 +72,7 @@ help_info() {
       -q, --quality
         Specify the video quality
       -p, --provider
-        Specify content source (anidb, animefire)
+        Specify content source (anidb, animefire, animesdigital)
       -v, --vlc
         Use VLC to play the video
       -V, --version
@@ -281,6 +281,44 @@ animefire_video_link() {
         sed 's|},{|}\n{|g' | sed -nE 's|.*"src":"([^"]+)".*"label":"([^"]+)".*|\2>\1|p' | sed 's|\\/|/|g'
 }
 
+# PROVIDER: animesdigital.org (BR)
+
+# search the query and give results. format is (slug \t title). $2 = mode (sub/dub)
+animesdigital_search() {
+    _ck="animesdigital_search|$1|$2"
+    cache_get "$_ck" && return 0
+    _query="$(printf "%s" "$1" | tr '+' ' ')"
+    _page="$(anidb_curl -G "https://animesdigital.org/pesquisa/" --data-urlencode "s=${_query}")"
+    _result="$(printf "%s" "$_page" | tr '\n' ' ' | sed 's|<a href|\n<a href|g' |
+        sed -nE 's|.*href="https://animesdigital\.org/anime/a/([a-z0-9-]+)"[^>]*title="([^"]+)".*|\1\t\2|p' |
+        sed -E 's|^([^\t]+\t)Assistir |\1|; s| Online em HD$||')"
+    if [ "$2" = "dub" ]; then
+        _result="$(printf "%s\n" "$_result" | grep -i "dublado")"
+    else
+        _result="$(printf "%s\n" "$_result" | grep -vi "dublado")"
+    fi
+    cache_set "$_ck" "$_result"
+    printf "%s" "$_result"
+}
+
+# get the episodes list of the selected anime. format is (video_id \t ep_no)
+animesdigital_episodes() {
+    _ck="animesdigital_episodes|$1"
+    cache_get "$_ck" && return 0
+    _result="$(anidb_curl "https://animesdigital.org/anime/a/${1}" | tr '\n' ' ' | sed 's|<a href|\n<a href|g' |
+        sed -nE 's|.*="https://animesdigital\.org/video/a/([0-9]+)/".*Epis[^"]*dio ([0-9]+)".*|\1\t\2|p' |
+        sed -E 's/\t0+([0-9])/\t\1/' | sort -k2 -n -t"	" -u)"
+    cache_set "$_ck" "$_result"
+    printf "%s" "$_result"
+}
+
+# get the direct video link for an episode (video_id, from episode_maps). format is (label>link)
+animesdigital_video_link() {
+    _video_id=$(printf "%s" "$episode_maps" | sed -nE "s|^([0-9]+)\t${1}$|\1|p")
+    anidb_curl "https://animesdigital.org/video/a/${_video_id}/" |
+        sed -nE 's|.*iframe[^>]*src="https://api\.anivideo\.net/videohls\.php\?d=([^&]+)&.*|HD>\1|p' | head -n 1
+}
+
 # select the quality according to the setting
 select_quality() {
     case "$1" in
@@ -297,6 +335,7 @@ select_quality() {
 get_video_link() {
     case "$provider" in
         animefire) links=$(animefire_video_link "$anime_id" "$ep_no" | sort -g -r -s) ;;
+        animesdigital) links=$(animesdigital_video_link "$ep_no" | sort -g -r -s) ;;
         *) links=$(anidb_m3u8 "$ep_no" "$mode" | sort -g -r -s) ;;
     esac
     [ -z "$links" ] && die "No sources found for $mode!"
@@ -373,6 +412,7 @@ notify_new_episodes() {
         [ -z "$_hist_provider" ] && _hist_provider=anidb
         case "$_hist_provider" in
             animefire) _cur_count=$(animefire_episodes "$_hist_id" | wc -l | tr -d "[:space:]") ;;
+            animesdigital) _cur_count=$(animesdigital_episodes "$_hist_id" | wc -l | tr -d "[:space:]") ;;
             *) _cur_count=$(anidb_episodes "$_hist_id" | wc -l | tr -d "[:space:]") ;;
         esac
         _state_file="$_state_dir/$(cache_key "$_hist_id")"
@@ -412,6 +452,7 @@ backup_old_hist() {
 process_hist_entry() {
     case "$hist_provider" in
         animefire) ep_list=$(animefire_episodes "$anime_id") ;;
+        animesdigital) ep_list=$(animesdigital_episodes "$anime_id" | cut -f 2) ;;
         *) ep_list=$(anidb_episodes "$anime_id" | cut -f 2) ;;
     esac
     ep_no=$(printf "%s" "$ep_list" | sed -n "/^${ep_no}$/{n;p;}") 2>/dev/null
@@ -734,12 +775,17 @@ case "$source" in
                 anime_title=$(printf "%s" "$title_ep" | sed 's| - episode.*||')
                 ep_no=$(printf "%s" "$title_ep" | sed -nE 's/.*- episode (.+)$/\1/p')
                 [ -z "$ep_no" ] && continue
-                if [ "$provider" = "animefire" ]; then
-                    ep_list="$(animefire_episodes "$anime_id")"
-                else
-                    episode_maps="$(anidb_episodes "$anime_id")"
-                    ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
-                fi
+                case "$provider" in
+                    animefire) ep_list="$(animefire_episodes "$anime_id")" ;;
+                    animesdigital)
+                        episode_maps="$(animesdigital_episodes "$anime_id")"
+                        ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
+                        ;;
+                    *)
+                        episode_maps="$(anidb_episodes "$anime_id")"
+                        ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
+                        ;;
+                esac
                 canon_ep_no="$(printf "%s" "$ep_list" | sed -n "/^${ep_no}$/=")"
                 info "Marathon: playing ${anime_title} episode ${ep_no}..."
                 play_episode
@@ -753,13 +799,18 @@ case "$source" in
         provider=$(printf "%s" "$anime_list" | grep "^$anime_id	" | cut -f 3)
         [ -z "$provider" ] && provider=anidb
         show_status "$anime_title"
-        if [ "$provider" = "animefire" ]; then
-            ep_list="$(animefire_episodes "$anime_id")"
-        else
-            anidb_desc "$anime_id" || true
-            episode_maps="$(anidb_episodes "$anime_id")"
-            ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
-        fi
+        case "$provider" in
+            animefire) ep_list="$(animefire_episodes "$anime_id")" ;;
+            animesdigital)
+                episode_maps="$(animesdigital_episodes "$anime_id")"
+                ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
+                ;;
+            *)
+                anidb_desc "$anime_id" || true
+                episode_maps="$(anidb_episodes "$anime_id")"
+                ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
+                ;;
+        esac
         ep_no=$(printf "%s" "$anime_list" | grep "^$anime_id	" | sed -nE 's/.*- episode ([^	]+).*/\1/p')
         ;;
     *)
@@ -776,11 +827,12 @@ case "$source" in
 
         query=$(printf "%s" "$query" | sed 's| |+|g')
 
-        [ -z "$provider" ] && provider=$(printf "anidb\nanimefire" | menu "Select source: ")
+        [ -z "$provider" ] && provider=$(printf "anidb\nanimefire\nanimesdigital" | menu "Select source: ")
         [ -z "$provider" ] && exit 1
 
         case "$provider" in
             animefire) anime_list=$(animefire_search "$query" "$mode") ;;
+            animesdigital) anime_list=$(animesdigital_search "$query" "$mode") ;;
             *) anime_list=$(anidb_search "$query") ;;
         esac
         # no exact match: drop the last word and retry once (poor man's "did you mean")
@@ -790,6 +842,7 @@ case "$source" in
                 info "No exact match, trying a broader search..."
                 case "$provider" in
                     animefire) anime_list=$(animefire_search "$_fallback_query" "$mode") ;;
+                    animesdigital) anime_list=$(animesdigital_search "$_fallback_query" "$mode") ;;
                     *) anime_list=$(anidb_search "$_fallback_query") ;;
                 esac
             fi
@@ -808,13 +861,18 @@ case "$source" in
         anime_title="$(printf "%s" "$result" | cut -f 2)"
         anime_id="$(printf "%s" "$result" | cut -f 1)"
         show_status "$anime_title"
-        if [ "$provider" = "animefire" ]; then
-            ep_list="$(animefire_episodes "$anime_id")"
-        else
-            anidb_desc "$anime_id" || true
-            episode_maps="$(anidb_episodes "$anime_id")"
-            ep_list="$(printf '%s' "$episode_maps" | cut -f 2)"
-        fi
+        case "$provider" in
+            animefire) ep_list="$(animefire_episodes "$anime_id")" ;;
+            animesdigital)
+                episode_maps="$(animesdigital_episodes "$anime_id")"
+                ep_list="$(printf '%s' "$episode_maps" | cut -f 2)"
+                ;;
+            *)
+                anidb_desc "$anime_id" || true
+                episode_maps="$(anidb_episodes "$anime_id")"
+                ep_list="$(printf '%s' "$episode_maps" | cut -f 2)"
+                ;;
+        esac
         [ -z "$ep_no" ] && ep_no=$(printf "%s" "$ep_list" | nth "Select episode: " "$menu_multi_flag")
         [ -z "$ep_no" ] && die "Invalid episode selection"
         ;;
