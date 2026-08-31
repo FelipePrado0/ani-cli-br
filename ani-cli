@@ -63,6 +63,10 @@ help_info() {
         Export history to a file
       --import <file>
         Merge history from a file
+      --check-providers
+        Ping every provider and report which are up
+      --stats
+        Show local watch stats from history
       -l, --logview
         Show logs
       -s, --syncplay
@@ -83,6 +87,8 @@ help_info() {
         Specify the number of episodes to watch
       --dub
         Play dubbed version
+      --all
+        Select every episode (use with -d to batch-download a whole series)
       --rofi
         Use rofi instead of fzf for the interactive menu
       --dmenu
@@ -392,7 +398,8 @@ time_until_next_ep() {
 
 # best-effort status badge for the selected anime, silent on failure
 show_status() {
-    _status="$($curl_exe -s -G --max-time "$curl_timeout" "https://animeschedule.net/api/v3/anime" --data "q=$(printf "%s" "$1" | tr ' ' '+')" 2>/dev/null | sed -nE 's|.*"status":"([^"]*)".*|\1|p' | head -n 1)"
+    _page="$($curl_exe -s -G --max-time "$curl_timeout" "https://animeschedule.net/api/v3/anime" --data "q=$(printf "%s" "$1" | tr ' ' '+')" 2>/dev/null)"
+    _status="$(printf "%s" "$_page" | sed -nE 's|.*"status":"([^"]*)".*|\1|p' | head -n 1)"
     [ -z "$_status" ] && return 0
     case "$_status" in
         Ongoing) _color="33" ;;
@@ -400,6 +407,12 @@ show_status() {
         *) _color="36" ;;
     esac
     printf "\033[1;%sm[%s]\033[0m\n" "$_color" "$_status"
+    _genres="$(printf "%s" "$_page" | sed -nE 's|.*"genres":\[([^]]*)\].*|\1|p' | head -n 1 |
+        grep -oE '"name":"[^"]*"' | sed -E 's|"name":"([^"]*)"|\1|' | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
+    [ -n "$_genres" ] && printf "Genres: %s\n" "$_genres"
+    _desc="$(printf "%s" "$_page" | sed -E 's/[\]"//g' | sed -nE 's|.*"description":"([^"]*)".*|\1|p' | head -n 1 |
+        sed 's|\\u003c|<|g; s|\\u003e|>|g; s|<[^>]*>| |g; s|\\n| |g' | sed 's/  */ /g; s/^ *//; s/ *$//')"
+    [ -n "$_desc" ] && printf "%s\n" "$_desc"
 }
 
 # one-shot check: compares episode counts vs last check, notifies on new episodes.
@@ -585,6 +598,11 @@ play() {
 
 # MAIN
 
+# optional config file: plain ANI_CLI_* assignments, sourced before defaults below
+config_file="${ANI_CLI_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/ani-cli/config}"
+# shellcheck disable=SC1090
+[ -f "$config_file" ] && . "$config_file"
+
 # setup
 base_api="https://anidb.app"
 search_api="${base_api}/browse?q=%s"
@@ -704,6 +722,37 @@ while [ $# -gt 0 ]; do
             info "History imported from $2"
             exit 0
             ;;
+        --check-providers)
+            for _p_name in anidb animefire animesdigital; do
+                case "$_p_name" in
+                    anidb) _p_url="https://anidb.app" ;;
+                    animefire) _p_url="https://animefire.io" ;;
+                    animesdigital) _p_url="https://animesdigital.org" ;;
+                esac
+                _p_code=$($curl_exe -sL -A "$agent" -o /dev/null -w "%{http_code}" --max-time 5 "$_p_url")
+                if [ "$_p_code" = "200" ]; then
+                    printf "\033[1;32m[OK]\033[0m   %s (%s)\n" "$_p_name" "$_p_code"
+                else
+                    printf "\033[1;31m[DOWN]\033[0m %s (%s)\n" "$_p_name" "${_p_code:-timeout}"
+                fi
+            done
+            exit 0
+            ;;
+        --stats)
+            [ -s "$histfile" ] || { info "No history yet."; exit 0; }
+            _total=$(wc -l <"$histfile" | tr -d "[:space:]")
+            _total_eps=0
+            while IFS="	" read -r _s_ep _s_id _s_title _s_provider; do
+                _int_ep="${_s_ep%%.*}"
+                case "$_int_ep" in '' | *[!0-9]*) continue ;; esac
+                _total_eps=$((_total_eps + _int_ep))
+            done <"$histfile"
+            info "Series in history: $_total"
+            info "Episodes watched (sum of last-watched, approx): $_total_eps (~$((_total_eps * 24 / 60))h)"
+            printf "By provider:\n"
+            cut -f 4 "$histfile" | sed 's/^$/anidb/' | sort | uniq -c
+            exit 0
+            ;;
         -l | --logview)
             case "$(uname -s)" in
                 Darwin*) log show --predicate 'process == "logger"' ;;
@@ -720,6 +769,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --dub) mode="dub" ;;
+        --all) ep_no="0--1" ;;
         --no-detach) no_detach=1 ;;
         --exit-after-play) exit_after_play=1 && no_detach=1 ;;
         --rofi) menu_program=rofi ;;
