@@ -65,6 +65,8 @@ help_info() {
         Select nth entry
       -q, --quality
         Specify the video quality
+      -p, --provider
+        Specify content source (anidb, animefire)
       -v, --vlc
         Use VLC to play the video
       -V, --version
@@ -194,6 +196,40 @@ anidb_m3u8() {
     anidb_curl "${_m3u8_master}" | sed 's|^#EXT-X-STREAM.*x||g; s|,.*|p|g; /^#/d; $!N; s|\n| >|;/EXT-X-I-FRAME/d'
 }
 
+# PROVIDER: animefire.io (BR)
+
+# search the query and give results. format is (slug \t title). $2 = mode (sub/dub)
+animefire_search() {
+    _query="$(printf "%s" "$1" | tr '+' ' ')"
+    _page="$(anidb_curl -X POST "https://animefire.io/proc/search" --data-urlencode "search_string=${_query}")"
+    _result="$(printf "%s" "$_page" | tr '\n' ' ' | sed 's|<a href|\n<a href|g' |
+        sed -nE 's|.*href="https://animefire\.io/animes/([a-z0-9-]+)".*alt="([^"]+)".*|\1\t\2|p' |
+        sed -e "s|&#039;|'|g" -e 's|&quot;|"|g' -e "s|&amp;|\&|g" \
+            -e 's|&oacute;|ó|g' -e 's|&eacute;|é|g' -e 's|&iacute;|í|g' -e 's|&aacute;|á|g' -e 's|&uacute;|ú|g' \
+            -e 's|&atilde;|ã|g' -e 's|&otilde;|õ|g' -e 's|&ccedil;|ç|g' -e 's|&ecirc;|ê|g' -e 's|&acirc;|â|g' -e 's|&ocirc;|ô|g' |
+        sed -E 's/ - Todos os Episódios$//')"
+    if [ "$2" = "dub" ]; then
+        printf "%s\n" "$_result" | grep -i "dublado"
+    else
+        printf "%s\n" "$_result" | grep -vi "dublado"
+    fi
+}
+
+# get the episodes list of the selected anime. format is (ep_no)
+animefire_episodes() {
+    _base="$(printf "%s" "$1" | sed 's/-todos-os-episodios$//')"
+    anidb_curl "https://animefire.io/animes/${1}" |
+        grep -oE "href=\"https://animefire\.io/animes/${_base}/[0-9]+\"" |
+        sed -E 's|.*/([0-9]+)"$|\1|' | sort -n -u
+}
+
+# get the direct video links for an episode. format is (label >link)
+animefire_video_link() {
+    _base="$(printf "%s" "$1" | sed 's/-todos-os-episodios$//')"
+    anidb_curl "https://animefire.io/video/${_base}/${2}?tempsubs=0" |
+        sed 's|},{|}\n{|g' | sed -nE 's|.*"src":"([^"]+)".*"label":"([^"]+)".*|\2>\1|p' | sed 's|\\/|/|g'
+}
+
 # select the quality according to the setting
 select_quality() {
     case "$1" in
@@ -208,9 +244,12 @@ select_quality() {
 
 # gets embed url, collects direct links and selects one with desired quality into $episode
 get_video_link() {
-    links=$(anidb_m3u8 "$ep_no" "$mode" | sort -g -r -s)
+    case "$provider" in
+        animefire) links=$(animefire_video_link "$anime_id" "$ep_no" | sort -g -r -s) ;;
+        *) links=$(anidb_m3u8 "$ep_no" "$mode" | sort -g -r -s) ;;
+    esac
     [ -z "$links" ] && die "No sources found for $mode!"
-    info "anidb.app links fetched"
+    info "Links fetched"
     select_quality "$quality"
     # should never trigger but just in case
     if printf "%s" "$ep_list" | grep -q "^$ep_no$"; then
@@ -305,6 +344,14 @@ play_episode() {
     [ "$log_episode" = 1 ] && [ "$player_function" != "debug" ] && [ "$player_function" != "download" ] && command -v logger >/dev/null && logger -t ani-cli "${anime_title} ${ep_no}"
     [ "$skip_intro" = 1 ] && skip_flag="$(ani-skip -i "$mal_id" -e "$canon_ep_no")"
     [ -z "$video_link" ] && get_video_link
+    # animefire's CDN 401s without a Referer from the site itself
+    referer_flag=""
+    if [ "$provider" = "animefire" ]; then
+        case "$player_function" in
+            *mpv* | *flatpak*mpv*) referer_flag="--referrer=https://animefire.io/" ;;
+            *vlc*) referer_flag="--http-referrer=https://animefire.io/" ;;
+        esac
+    fi
     # wait for the previous player to close (in range selection)
     wait
     # shellcheck disable=SC2086
@@ -312,12 +359,12 @@ play_episode() {
         debug) printf "All links:\n%s\nSelected link:\n%s\n" "$links" "$video_link" ;;
         android_mpv) nohup am start --user 0 -a android.intent.action.VIEW -d "$video_link" -n is.xyz.mpv/.MPVActivity -e "title" "${anime_title} Episode ${ep_no}" $player_extra_flags >/dev/null 2>&1 & ;;
         android_vlc) nohup am start --user 0 -a android.intent.action.VIEW -d "$video_link" -n org.videolan.vlc/org.videolan.vlc.gui.video.VideoPlayerActivity -e "title" "${anime_title} Episode ${ep_no}" $player_extra_flags >/dev/null 2>&1 & ;;
-        *flatpak*mpv*) flatpak run io.mpv.Mpv $skip_flag $player_extra_flags --force-media-title="${anime_title} Episode ${ep_no}" "$video_link" >/dev/null 2>&1 & ;;
+        *flatpak*mpv*) flatpak run io.mpv.Mpv $skip_flag $referer_flag $player_extra_flags --force-media-title="${anime_title} Episode ${ep_no}" "$video_link" >/dev/null 2>&1 & ;;
         *mpv*)
             if [ "$no_detach" = 0 ]; then
-                nohup $player_function $skip_flag $player_extra_flags --force-media-title="${anime_title} Episode ${ep_no}" "$video_link" >/dev/null 2>&1 &
+                nohup $player_function $skip_flag $referer_flag $player_extra_flags --force-media-title="${anime_title} Episode ${ep_no}" "$video_link" >/dev/null 2>&1 &
             else
-                $player_function $skip_flag $player_extra_flags --force-media-title="${anime_title} Episode ${ep_no}" "$video_link"
+                $player_function $skip_flag $referer_flag $player_extra_flags --force-media-title="${anime_title} Episode ${ep_no}" "$video_link"
                 mpv_exitcode=$?
                 [ "$exit_after_play" = 1 ] && [ -z "$_range" ] && exit "$mpv_exitcode"
             fi
@@ -330,7 +377,7 @@ play_episode() {
                 nohup $player_function $player_extra_flags --no-stdin --keep-running --mpv-force-media-title="${anime_title} Episode ${ep_no}" "$video_link" >/dev/null 2>&1 &
             fi
             ;;
-        *vlc*) nohup $player_function $player_extra_flags --play-and-exit --meta-title="${anime_title} Episode ${ep_no}" "$video_link" >/dev/null 2>&1 & ;;
+        *vlc*) nohup $player_function $referer_flag $player_extra_flags --play-and-exit --meta-title="${anime_title} Episode ${ep_no}" "$video_link" >/dev/null 2>&1 & ;;
         *yncpla*) nohup $player_function $player_extra_flags "$video_link" -- --force-media-title="${anime_title} Episode ${ep_no}" >/dev/null 2>&1 & ;;
         download) "$player_function" "$video_link" "${anime_title} Episode ${ep_no}" $player_extra_flags ;;
         catt) nohup catt cast $player_extra_flags "$video_link" >/dev/null 2>&1 & ;;
@@ -391,6 +438,7 @@ tls13_ciphers='TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY13
 agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 mode="${ANI_CLI_MODE:-sub}"
+provider="${ANI_CLI_PROVIDER:-}"
 download_dir="${ANI_CLI_DOWNLOAD_DIR:-.}"
 log_episode="${ANI_CLI_LOG:-1}"
 quality="${ANI_CLI_QUALITY:-best}"
@@ -455,6 +503,11 @@ while [ $# -gt 0 ]; do
         -q | --quality)
             [ $# -lt 2 ] && die "missing argument!"
             quality="$2"
+            shift
+            ;;
+        -p | --provider)
+            [ $# -lt 2 ] && die "missing argument!"
+            provider="$2"
             shift
             ;;
         -S | --select-nth)
@@ -526,6 +579,7 @@ trap 'cleanup; exit 1' INT HUP TERM
 # searching
 case "$source" in
     history)
+        provider=anidb # history isn't provider-aware yet
         backup_old_hist
         anime_list=$(while read -r ep_no anime_id anime_title; do process_hist_entry & done <"$histfile")
         wait
@@ -553,16 +607,26 @@ case "$source" in
 
         query=$(printf "%s" "$query" | sed 's| |+|g')
 
-        anime_list=$(anidb_search "$query")
+        [ -z "$provider" ] && provider=$(printf "anidb\nanimefire" | menu "Select source: ")
+        [ -z "$provider" ] && exit 1
+
+        case "$provider" in
+            animefire) anime_list=$(animefire_search "$query" "$mode") ;;
+            *) anime_list=$(anidb_search "$query") ;;
+        esac
         [ -z "$anime_list" ] && die "No results found!"
         [ "$index" -eq "$index" ] 2>/dev/null && result=$(printf "%s" "$anime_list" | sed -n "${index}p")
         [ -z "$index" ] && result=$(printf "%s" "$anime_list" | nl -w 2 | sed 's/^[[:space:]]//' | nth "Select anime: ")
         [ -z "$result" ] && die "Invalid anime selection"
         anime_title="$(printf "%s" "$result" | cut -f 2)"
         anime_id="$(printf "%s" "$result" | cut -f 1)"
-        anidb_desc "$anime_id" || true
-        episode_maps="$(anidb_episodes "$anime_id")"
-        ep_list="$(printf '%s' "$episode_maps" | cut -f 2)"
+        if [ "$provider" = "animefire" ]; then
+            ep_list="$(animefire_episodes "$anime_id")"
+        else
+            anidb_desc "$anime_id" || true
+            episode_maps="$(anidb_episodes "$anime_id")"
+            ep_list="$(printf '%s' "$episode_maps" | cut -f 2)"
+        fi
         [ -z "$ep_no" ] && ep_no=$(printf "%s" "$ep_list" | nth "Select episode: " "$menu_multi_flag")
         [ -z "$ep_no" ] && die "Invalid episode selection"
         ;;
