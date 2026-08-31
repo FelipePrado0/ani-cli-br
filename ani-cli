@@ -53,6 +53,8 @@ help_info() {
     Options:
       -c, --continue
         Continue watching from history
+      --marathon
+        Play the next episode of every unwatched series in history, in sequence
       -d, --download
         Download the video instead of playing it
       -D, --delete
@@ -627,6 +629,10 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         -c | --continue) source=history ;;
+        --marathon)
+            source=history
+            marathon=1
+            ;;
         -d | --download)
             player_function=download
             ;;
@@ -710,6 +716,20 @@ case "$source" in
         anime_list=$(while read -r ep_no anime_id anime_title; do process_hist_entry & done <"$histfile")
         wait
         [ -z "$anime_list" ] && die "No unwatched series in history!"
+        if [ "$marathon" = 1 ]; then
+            printf "%s\n" "$anime_list" | while IFS="	" read -r anime_id _rest; do
+                [ -z "$anime_id" ] && continue
+                anime_title=$(printf "%s" "$_rest" | sed 's| - episode.*||')
+                ep_no=$(printf "%s" "$_rest" | sed -nE 's/.*- episode (.+)$/\1/p')
+                [ -z "$ep_no" ] && continue
+                episode_maps="$(anidb_episodes "$anime_id")"
+                ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
+                canon_ep_no="$(printf "%s" "$ep_list" | sed -n "/^${ep_no}$/=")"
+                info "Marathon: playing ${anime_title} episode ${ep_no}..."
+                play_episode
+            done
+            exit 0
+        fi
         [ -z "${index##*[!0-9]*}" ] && anime_id=$(printf "%s" "$anime_list" | nl -w 2 | sed 's/^[[:space:]]//' | nth "Select anime: " | cut -f 1)
         [ -z "${index##*[!0-9]*}" ] || anime_id=$(printf "%s" "$anime_list" | sed -n "${index}p" | cut -f 1)
         [ -z "$anime_id" ] && exit 1
