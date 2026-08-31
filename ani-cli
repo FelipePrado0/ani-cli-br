@@ -119,6 +119,14 @@ update_script() {
     new_version="$(printf "%s" "$update" | sed -nE 's|^version_number="([^"]+)"$|\1|p')"
     [ -z "$new_version" ] && die "[branch:$branch] Invalid response."
     printf "%s" "$update" | grep -q "^version_number" || die "[branch:$branch] Invalid response."
+    # sanity guard against truncation/corruption/wholesale replacement.
+    # NOT a cryptographic check - the project publishes no signed checksum to verify against.
+    _cur_size=$(wc -c <"$0" | tr -d "[:space:]")
+    _new_size=$(printf "%s" "$update" | wc -c | tr -d "[:space:]")
+    _ratio=$((_new_size * 100 / _cur_size))
+    if [ "$_ratio" -lt 50 ] || [ "$_ratio" -gt 300 ]; then
+        die "[branch:$branch] Downloaded script size looks suspicious (${_cur_size}B -> ${_new_size}B). Aborting - update manually if this is expected."
+    fi
     update="$(printf "%s\n" "$update" | diff -u "$0" -)"
     if [ -z "$update" ]; then
         info "[branch:$branch] Script is up to date :) ($version_number)"
