@@ -662,9 +662,27 @@ case "$source" in
             animefire) anime_list=$(animefire_search "$query" "$mode") ;;
             *) anime_list=$(anidb_search "$query") ;;
         esac
+        # no exact match: drop the last word and retry once (poor man's "did you mean")
+        if [ -z "$anime_list" ] && printf "%s" "$query" | grep -q "+"; then
+            _fallback_query="$(printf "%s" "$query" | sed 's/+[^+]*$//')"
+            if [ -n "$_fallback_query" ]; then
+                info "No exact match, trying a broader search..."
+                case "$provider" in
+                    animefire) anime_list=$(animefire_search "$_fallback_query" "$mode") ;;
+                    *) anime_list=$(anidb_search "$_fallback_query") ;;
+                esac
+            fi
+        fi
         [ -z "$anime_list" ] && die "No results found!"
         [ "$index" -eq "$index" ] 2>/dev/null && result=$(printf "%s" "$anime_list" | sed -n "${index}p")
-        [ -z "$index" ] && result=$(printf "%s" "$anime_list" | nl -w 2 | sed 's/^[[:space:]]//' | nth "Select anime: ")
+        if [ -z "$index" ] && [ "$menu_program" = "fzf" ] && [ "$provider" = "anidb" ]; then
+            # shellcheck disable=SC2016
+            _preview_cmd='curl -sL -A "'"$agent"'" "https://anidb.app/anime/{2}" | grep -oE "<meta name=\"description\" content=\"[^\"]*\"" | sed -E "s/.*content=\"([^\"]*)\".*/\1/"'
+            result=$(printf "%s" "$anime_list" | nl -w 2 | sed 's/^[[:space:]]//' |
+                fzf --reverse --cycle --prompt "Select anime: " -d '\t' --with-nth 1,3 --preview "$_preview_cmd" $menu_extra_flags | cut -f 2,3)
+        elif [ -z "$index" ]; then
+            result=$(printf "%s" "$anime_list" | nl -w 2 | sed 's/^[[:space:]]//' | nth "Select anime: ")
+        fi
         [ -z "$result" ] && die "Invalid anime selection"
         anime_title="$(printf "%s" "$result" | cut -f 2)"
         anime_id="$(printf "%s" "$result" | cut -f 1)"
