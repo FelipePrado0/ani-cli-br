@@ -93,6 +93,8 @@ help_info() {
         Exit the player, and return the player exit code (useful for non interactive scenarios)
       -N, --nextep-countdown
         Display a countdown to the next episode
+      --watch
+        One-shot check for new episodes in history, notifies if found (run via cron/systemd timer)
       -U, --update
         Update the script
     Some example usages:
@@ -357,6 +359,34 @@ show_status() {
         *) _color="36" ;;
     esac
     printf "\033[1;%sm[%s]\033[0m\n" "$_color" "$_status"
+}
+
+# one-shot check: compares episode counts vs last check, notifies on new episodes.
+# meant to be invoked from cron/systemd timer, not a long-running loop itself.
+notify_new_episodes() {
+    _state_dir="${cache_dir}/watch_state"
+    mkdir -p "$_state_dir"
+    while IFS="	" read -r _hist_ep _hist_id _hist_title; do
+        [ -z "$_hist_id" ] && continue
+        _cur_count=$(anidb_episodes "$_hist_id" | wc -l | tr -d "[:space:]")
+        _state_file="$_state_dir/$(cache_key "$_hist_id")"
+        _prev_count=0
+        [ -f "$_state_file" ] && _prev_count=$(cat "$_state_file")
+        if [ "$_prev_count" -gt 0 ] && [ "$_cur_count" -gt "$_prev_count" ]; then
+            _msg="${_hist_title}: new episode available (total: ${_cur_count})"
+            if command -v notify-send >/dev/null 2>&1; then
+                notify-send "ani-cli" "$_msg"
+            elif command -v osascript >/dev/null 2>&1; then
+                osascript -e "display notification \"$_msg\" with title \"ani-cli\""
+            elif command -v termux-notification >/dev/null 2>&1; then
+                termux-notification --title "ani-cli" --content "$_msg"
+            else
+                printf "\033[1;35m[ani-cli] %s\033[0m\n" "$_msg"
+            fi
+        fi
+        printf "%s" "$_cur_count" >"$_state_file"
+    done <"$histfile"
+    exit 0
 }
 
 # HISTORY
@@ -640,6 +670,7 @@ while [ $# -gt 0 ]; do
         --dmenu) menu_program=dmenu ;;
         --skip) skip_intro=1 ;;
         -N | --nextep-countdown) source=nextep ;;
+        --watch) notify_new_episodes ;;
         -U | --update)
             dep_ch "patch"
             branch="${2:-$branch}"
