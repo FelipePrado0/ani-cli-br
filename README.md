@@ -1,560 +1,172 @@
 <p align=center>
 <br>
-<a href="http://makeapullrequest.com"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
+<a href="https://github.com/pystardust/ani-cli"><img src="https://img.shields.io/badge/fork%20of-pystardust%2Fani--cli-blue"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-brightgreen"></a>
 <a href="#Linux"><img src="https://img.shields.io/badge/os-linux-brightgreen">
 <a href="#MacOS"><img src="https://img.shields.io/badge/os-mac-brightgreen">
 <a href="#Android"><img src="https://img.shields.io/badge/os-android-brightgreen">
 <a href="#Windows"><img src="https://img.shields.io/badge/os-windows-yellowgreen">
-<a href="#iOS"><img src="https://img.shields.io/badge/os-ios-yellow">
-<a href="#Steam-deck"><img src="https://img.shields.io/badge/os-steamdeck-yellow">
-<br>
-<p align=center>
-<a href="https://discord.gg/aqu7GpqVmR"><img src="https://invidget.switchblade.xyz/aqu7GpqVmR"></a>
-<a href="matrix.md"><img src="/.assets/matrix-logo.svg" height=110></a>
-<br>
-<a href="https://discord.gg/aqu7GpqVmR">Discord</a>
-<a href="https://github.com/pystardust/ani-cli/blob/master/matrix.md">Matrix</a>
-</p>
-<a href="https://github.com/port19x"><img src="https://img.shields.io/badge/lead-port19x-lightblue"></a>
-<a href="https://github.com/CoolnsX"><img src="https://img.shields.io/badge/maintainer-CoolnsX-blue"></a>
-<a href="https://github.com/justchokingaround"><img src="https://img.shields.io/badge/maintainer-justchokingaround-blue"></a>
-<a href="https://github.com/Derisis13"><img src="https://img.shields.io/badge/maintainer-Derisis13-blue"></a>
-<a href="https://github.com/71zenith"><img src="https://img.shields.io/badge/maintainer-71zenith-blue"></a>
-<a href="https://github.com/vorlie"><img src="https://img.shields.io/badge/maintainer-vorlie-blue"></a>
-
 </p>
 
 <h3 align="center">
-A cli to browse and watch anime (alone AND with friends). This tool scrapes the site <a href="https://anidb.app/">anidb.</a>
+ani-cli-br: fork of <a href="https://github.com/pystardust/ani-cli">ani-cli</a> with support for multiple sources, including Brazilian sites.
 </h3>
 
-<h1 align="center">
-	Showcase
-</h1>
+<p align="center"><a href="README.pt-BR.md">Leia em Português</a></p>
 
-[ani-cli-demo.webm](https://user-images.githubusercontent.com/44473782/224679247-0856e652-f187-4865-bbcf-5a8e5cf830da.webm)
+## About this fork
 
-## Table of Contents
+This repository is a **fork** of the original [ani-cli](https://github.com/pystardust/ani-cli), created and maintained by [pystardust](https://github.com/pystardust) and contributors, licensed under **GPL-3.0**. All credit for the project's foundation (scraping architecture, history system, player integration) goes to the original authors. See [LICENSE](LICENSE) for the full license text.
 
-- [Fixing errors](#fixing-errors)
-- [Install](#install)
-  - [Tier 1: Linux, Mac, Android](#tier-1-support-linux-mac-android)
-  - [Tier 2: Windows, WSL, iOS, Steam Deck, FreeBSD, Ubuntu Touch](#tier-2-support-windows-wsl-ios-steam-deck-freebsd-ubuntu-touch)
-  - [From Source](#installing-from-source)
-- [Uninstall](#uninstall)
-- [Dependencies](#dependencies)
-  - [Ani-Skip](#ani-skip)
-- [FAQ](#faq)
-- [Homies](#homies)
-- [Contribution Guidelines](./CONTRIBUTING.md)
-- [Disclaimer](./disclaimer.md)
+The original project **does not accept** support for multiple sites, by the maintainers' deliberate decision (see [hacking.md](hacking.md)). This fork exists specifically to do that: extend ani-cli with additional sources and quality-of-life features, staying compatible with the original workflow whenever possible.
 
-## Fixing errors
+If you just want the original ani-cli (anidb.app source, actively maintained by the original authors), use the [official repository](https://github.com/pystardust/ani-cli).
 
-If you encounter `Blocked by cloudflare. Try installing curl-impersonate` then install `curl-impersonate` from your respective package manager.
-If it is not available, then download from their [github](https://github.com/lwthiker/curl-impersonate) by running the following commands.
+## What's different in this fork
 
-```sh
-curl -LO "https://github.com/lwthiker/curl-impersonate/releases/download/v0.6.1/curl-impersonate-v0.6.1.x86_64-linux-gnu.tar.gz"
-sudo tar xf curl-impersonate-v0.6.1.x86_64-linux-gnu.tar.gz -C /usr/local/bin
-```
+- **Multiple content providers** (`-p`/`--provider`): `anidb` (original), `animefire`, `animesdigital`. Interactive selection menu, or skip straight to one with the flag
+- **History marathon** (`--marathon`): plays the next episode of every unwatched series, in sequence
+- **New-episode notifications** (`--watch`): one-off check meant to run from cron/systemd timer
+- **Local stats** (`--stats`): total series/episodes watched, broken down by provider
+- **Provider health check** (`--check-providers`): pings each site before you search
+- **Batch download** (`--all` + `-d`): downloads an entire series in one pass
+- **History export/import** (`--export`/`--import`)
+- **Optional config file** (`~/.config/ani-cli/config`), alongside env vars
+- **Local cache** for search/episode lists (configurable TTL). Video links are never cached, they're signed and expire
+- **Anime info card**: synopsis, genres and status (airing/finished) shown before playback
+- **Fuzzy fallback search**: no exact match, retries with a shorter query
+- **Synopsis preview in fzf** when picking an anime (anidb provider)
+- **Rewatch confirmation** for episodes you've already seen
+- Configurable retries and timeout, sanity guard on self-update
 
-For any other breaking issue, then make sure you are on **latest version** by typing `sudo ani-cli -U` to update on Linux, Mac and Android. On Windows, run `ani-cli -U`.
-If after this the issue persists then open an issue.
+See the commit history for details on each change.
 
-## Install
+### Supported sources and known limitations
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/ani-cli.svg?minversion=4.14)](https://repology.org/project/ani-cli/versions)
+| Provider | Sub | Dub | Note |
+|---|---|---|---|
+| `anidb` (default) | ✅ | ✅ | Original source, per-episode sub/dub toggle |
+| `animefire` | ✅ | ✅ | Dubbed is a separate search result (filtered automatically with `--dub`) |
+| `animesdigital` | ✅ | ✅ | Same dub caveat as animefire |
 
-### Tier 1 Support: Linux, Mac, Android
+Brazilian sites investigated and **not supported**, due to a real third-party blocker (documented in the commit history): Anroll and Goyabu (video sits behind the Google Blogger player, which now only runs client-side via JavaScript, no way to resolve it without a real JS engine), BetterAnime (same cause), Animes Vision (the player's video host went offline), AnimesOrion (site itself is down). This can change if those sites update their infrastructure, it's not laziness, it's a verified technical blocker.
 
-*These Platforms have rock solid support and are used by maintainers and large parts of the userbase.*
+Season switching (`change_season`) only works on the `anidb` provider, the others don't expose that relationship reliably.
 
-<details><summary><b>Linux</b></summary>
+History, `-c`, `--marathon` and `--watch` already know which provider each series belongs to (saved automatically).
 
-#### Native Packages
+## Installation
 
-*Native packages have a more robust update cycle, but sometimes they are slow to upgrade. \
-If the one for your platform is up-to-date we suggest going with it.*
-
-<details><summary>Debian 13/unstable</summary>
+This fork isn't published to any package manager (scoop/brew/AUR/apt belong to the original project). Install from source:
 
 ```sh
-sudo apt install ani-cli
-```
-</details>
-
-<details><summary>Fedora</summary>
-
-To install mpv (and vlc) you need _RPM Fusion free_ enabled. Simply follow the instructions here: https://rpmfusion.org/Configuration
-To be able to install syncplay, you'll need to enable this copr repo (instructions included): https://copr.fedorainfracloud.org/coprs/batmanfeynman/syncplay/.
-
-To install ani-cli:
-```sh
-sudo dnf copr enable derisis13/ani-cli
-sudo dnf install ani-cli
-```
-*If for your distro uses rpm and you would like to see a native package, open an issue.*
-
-</details><details><summary>Arch</summary>
-
-Build and install from the AUR:
-```sh
-yay -S ani-cli
-```
-Also consider `ani-cli-git`
-
-</details><details><summary>Gentoo</summary>
-
-Build and install from the GURU:
-```sh
-sudo eselect repository enable guru
-sudo emaint sync -r guru
-sudo emerge -a ani-cli
-```
-Consider using the 9999 ebuild.
-```sh
-sudo emerge -a =app-misc/ani-cli-9999
+git clone https://github.com/FelipePrado0/ani-cli-br.git
+cd ani-cli-br
+sudo cp ani-cli /usr/local/bin   # linux/mac
+# or copy ani-cli to any directory on your PATH
 ```
 
-</details><details><summary>OpenSuse</summary>
+On Windows, use Git Bash + [scoop](https://scoop.sh/) just for the dependencies (`fzf`, `mpv`), not for ani-cli itself. See the [Windows](#windows) section below.
 
-On Suse the provided MPV and VLC packages are missing features that are used by ani-cli. The only required is the "Only Essentials" repository which has versions for each Suse release.
-You can find instructions on this [here](https://en.opensuse.org/Additional_package_repositories#Packman).
+### Windows
 
-To add the ani-cli copr repo, update then install ani-cli run (on both versions):
-```sh
-zypper addrepo https://download.copr.fedorainfracloud.org/results/derisis13/ani-cli/opensuse-tumbleweed-x86_64/ ani-cli
-zypper dup
-zypper install ani-cli
-```
-You'll get a warning about `Signature verification failed [4-Signatures public key is not available]` but this can be ignored from the prompt.
+1. Install [scoop](https://scoop.sh/) and Git for Windows
+2. `scoop bucket add extras && scoop install fzf mpv`
+3. Clone this repository and run `ani-cli` from Git Bash (`sh ./ani-cli`, or add it to your PATH)
 
-*Note: package is noarch, so any architecture should work, even though the repo is labelled x86-64*
-
-</details></details><details><summary><b>MacOS</b></summary>
-
-Install [HomeBrew](https://docs.brew.sh/Installation) if not installed.
-
-```sh
-brew tap pystardust/ani-cli https://github.com/pystardust/ani-cli.git
-brew trust pystardust/ani-cli
-brew install ani-cli && brew install --cask iina
-```
-*Why iina and not mpv? Drop-in replacement for mpv for MacOS. Integrates well with OSX UI. Excellent support for M1. Open Source.*
-
-</details><details><summary><b>Android</b></summary>
-
-Install termux [(Guide)](https://termux.com/)
-
-#### Termux package
-
-```sh
-pkg up -y
-pkg install ani-cli
-```
-If you're using Android 14 make sure to run this due to [#1206](https://github.com/pystardust/ani-cli/issues/1206):
-```sh
-pkg install termux-am
-```
-
-For players you can use the apk (playstore/fdroid) versions of mpv and vlc. Note that these cannot be checked from termux so a warning is generated when checking dependencies.
-
-</details>
-
-### Tier 2 Support: Windows, WSL, iOS, Steam Deck, FreeBSD, Ubuntu Touch
-
-*While officially supported, installation is more involved on these platforms and sometimes issues arise. \
-Reach out if you need help.*
-
-<details><summary><b>Windows</b></summary>
-
-`ani-cli` is on scoop. Please read further for setup instructions.
-
-We will set up the bash.exe that comes with Git for Windows to be used with Windows Terminal. You may use terminals such as Wezterm or Alacritty, but this guide only covers Windows Terminal. The Git Bash terminal (i.e., mintty) [has problems with fzf](#windows-known-problems-and-solutions).
-
-First, you'll need to install the scoop package manager. [(Install)](https://scoop.sh/) Follow **quickstart**.
-
-Next, get Windows Terminal. It comes preinstalled on Windows 11. If you do not have it, install it by running the following commands in powershell.
-
-```sh
-scoop bucket add extras
-scoop install extras/windows-terminal
-```
-
-Next, get git. If you have it, please update it. If you do not already have it, install it by running `scoop install git` in powershell.
-
-Ensure that Git Bash is present in the Windows Terminal tab drop down, as shown below.
-
-![windows-terminal-git-bash-1.png](.assets/windows-terminal-git-bash-1.png)
-
-If it is not there, please add it. To add it, first click the drop-down button beside the new tab button (shown above).
-
-Then, navigate to `Settings > Profiles > Add a new profile`. Click `+ New empty profile`.
-
-![windows-terminal-git-bash-2.png](.assets/windows-terminal-git-bash-2.png)
-
-Next:
-- If you installed git with scoop: Set *Name* as "Git Bash", set *Command line* as `%GIT_INSTALL_ROOT%\bin\bash.exe -i -l`, and set *Icon* as `%GIT_INSTALL_ROOT%\mingw64\share\git\git-for-windows.ico`.
-- If you installed git by other means: Set *Name* as "Git Bash", set *Command line* as `C:\Program Files\Git\bin\bash.exe -i -l`, and set *Icon* as `C:\Program Files\Git\mingw64\share\git\git-for-windows.ico`.
-
-Next, set *Starting Directory* to `%USERPROFILE%`, and ensure that *Hide profile from dropdown* is set to "Off" (otherwise you won't be able to see this profile in the drop down).
-
-![windows-terminal-git-bash-3.png](.assets/windows-terminal-git-bash-3.png)
-
-Now save your changes.
-
-You will use this profile to run `ani-cli` in this bash shell.
-Under Startup in Windows Terminal Settings, you may set this profile as the default so that you do not have to switch to it every time you want to run `ani-cli`.
-
-![windows-terminal-git-bash-4.png](.assets/windows-terminal-git-bash-4.png)
-
-Now restart Windows Terminal. In the Git Bash profile, install `ani-cli` by running the following commands.
-
-```sh
-scoop bucket add extras
-scoop install ani-cli
-```
-
-Next, install its dependencies.
-
-```sh
-scoop bucket add extras
-scoop install fzf ffmpeg mpv
-```
-
-Consider also installing `yt-dlp` for downloading to work.
-
-Restart Windows Terminal. Go to the Git Bash profile and update `ani-cli` with `ani-cli -U`. You will use this keep ani-cli up-to-date.
-
-Now you can use ani-cli. Read the output of `ani-cli -h` for more help.
-
-#### Windows: Known Problems and Solutions
-
-If you have a problem, please update ani-cli to the latest version with `ani-cli -U`. If you still have a problem, please read further.
-
-- Stuck in "Search anime:". This shouldn't happen if you are using the Windows Terminal + Bash setup described above. It happens if you are using the Git Bash terminal (i.e., the mintty terminal). This is a problem between fzf and mintty, which should be resolved in future versions of fzf. For the time being, either use the Windows Terminal setup described above or, if you are dead-set on using the mintty terminal, run `export MSYS=enable_pcon` before running ani-cli.
-- "No such file or directory" or WSL-related errors: This shouldn't happen if you are using the Window Terminal + Bash setup described above. This happens if you run ani-cli in powershell or cmd. This is due WSL's bash.exe being called instead of Git for Windows' bash.exe in `%USERPROFILE%\scoop\shims\ani-cli.cmd`. If you must use powershell or cmd, edit the `%USERPROFILE%\scoop\shims\ani-cli.cmd` file. In File Explorer, go to the `C:\Users\USERNAME\scoop\shims` directory and open the `ani-cli.cmd` file with notepad. Next:
-    - If you installed git with scoop, replace `@bash` with `@"%GIT_INSTALL_ROOT%\bin\bash.exe"`, or
-    - If you installed git by other means, replace `@bash` with `@"C:\Program Files\Git\bin\bash.exe"`.
-This should be fixed if the ani-cli scoop manifest gets updated in [this PR](https://github.com/ScoopInstaller/Extras/pull/13342).
-- curl can cause issues. ani-cli has been tested unsuccessfully with curl `7.83.1` and successfully with `7.86.0`. If you run into issues, try installing a newer one with scoop.
-- If you installed mpv with scoop, your mpv configuration will get read from `C:\Users\USERNAME\scoop\apps\mpv\current\portable_config`. See [the mpv documentation](https://mpv.io/manual/stable/) regarding `portable_config` for more details.
-
-</details><details><summary><b>WSL</b></summary>
-
-Follow the installation instructions of your Linux distribution.
-
-Note that the media player (mpv or vlc) will need to be installed on Windows, not WSL. See the justification for this in the comment [(here)](https://github.com/pystardust/ani-cli/issues/1266#issuecomment-1926945757). Instructions on how to use the media player from WSL instead are also included in the linked comment.
-
-When installing the media player on Windows, make sure that it is on the Windows Path. An easy way to ensure this is to download the media player with a package manager (on Windows, not WSL) such as scoop.
-
-</details><details><summary><b>iOS</b></summary>
-
-Install iSH and VLC from the app store.
-
-Make sure apk is updated using
-```
-cat > /etc/apk/repositories <<'EOF'
-https://dl-cdn.alpinelinux.org/alpine/edge/main
-https://dl-cdn.alpinelinux.org/alpine/edge/community
-https://dl-cdn.alpinelinux.org/alpine/edge/testing
-EOF
-
-apk update
-apk add --upgrade apk-tools
-apk upgrade --available
-```
-
-Further details: https://github.com/ish-app/ish/issues/2530
-
-Then run this:
-```sh
-apk add grep sed curl-impersonate bash fzf git ncurses patch ffmpeg
-git clone --depth 1 https://github.com/pystardust/ani-cli ~/.ani-cli
-cp ~/.ani-cli/ani-cli /usr/local/bin/ani-cli
-chmod +x /usr/local/bin/ani-cli
-rm -rf ~/.ani-cli
-```
-For Downloads on iOS in iSH, omit the usual `-d` flag and instead select the Download option in VLC:
-<img width="1170" height="1177" alt="image" src="https://github.com/user-attachments/assets/da25884b-a53d-4888-bee1-4867a8216ddd" />
-
-</details>
-
-<details><summary><b>Steam Deck</b></summary>
-
-#### Copypaste script:
-
-* Switch to Desktop mode (`STEAM` Button > Power > Switch to Desktop)
-* Open `Konsole` (Steam Deck Icon in bottom left corner > System > Konsole)
-* Copy the script, paste it in the CLI and press Enter("A" button on Steam Deck)
-
-```sh
-[ ! -d ~/.local/bin ] && mkdir ~/.local/bin && echo "export PATH=$HOME/.local/bin:\$PATH" >> ".$(echo $SHELL | sed -nE "s|.*/(.*)\$|\1|p")rc"
-
-git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
-~/.fzf/install
-
-curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.local/bin/yt-dlp
-chmod +x ~/.local/bin/yt-dlp
-
-mkdir ~/.patch
-curl -o ~/.patch/patch.tar.zst https://mirror.sunred.org/archlinux/core/os/x86_64/patch-2.8-1-x86_64.pkg.tar.zst
-tar xvf ~/.patch/patch.tar.zst -C ~/.patch/
-cp ~/.patch/usr/bin/patch ~/.local/bin/
-
-git clone https://github.com/pystardust/ani-cli.git ~/.ani-cli
-cp ~/.ani-cli/ani-cli ~/.local/bin/
-
-flatpak install io.mpv.Mpv
-```
-press enter("A" button on Steam Deck) on questions
-
-#### Installation in steps:
-
-##### Install mpv (Flatpak version):
-
-```sh
-flatpak install io.mpv.Mpv
-```
-press enter("A" button on Steam Deck) on questions
-
-##### Install [fzf](https://github.com/junegunn/fzf):
-
-```sh
-git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
-~/.fzf/install
-```
-press enter("A" button on Steam Deck) on questions
-
-##### Make a ~/.local/bin folder if doesn't exist and add it to $PATH
-
-```sh
-[ ! -d ~/.local/bin ] && mkdir ~/.local/bin && echo "export PATH=$HOME/.local/bin:\$PATH" >> ".$(echo $SHELL | sed -nE "s|.*/(.*)\$|\1|p")rc"
-```
-
-##### Install [yt-dlp](https://github.com/yt-dlp/yt-dlp) (needed for download feature only):
-
-```sh
-curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.local/bin/yt-dlp
-chmod +x ~/.local/bin/yt-dlp
-```
-
-##### Install [patch](https://savannah.gnu.org/projects/patch/) (needed for self-update feature [ -U ] ):
-
-```sh
-mkdir ~/.patch
-curl -o ~/.patch/patch.tar.zst https://mirror.sunred.org/archlinux/core/os/x86_64/patch-2.8-1-x86_64.pkg.tar.zst
-tar xvf ~/.patch/patch.tar.zst -C ~/.patch/
-cp ~/.patch/usr/bin/patch ~/.local/bin/
-```
-
-##### Install ani-cli:
-
-```sh
-git clone https://github.com/pystardust/ani-cli.git ~/.ani-cli
-cp ~/.ani-cli/ani-cli ~/.local/bin/
-```
-
-##### Optional: add desktop entry:
-
-```
-echo '[Desktop Entry]
-Encoding=UTF-8
-Type=Application
-Exec=bash -c "source $HOME/.'$(echo $SHELL | sed -nE "s|.*/(.*)\$|\1|p")'rc && konsole --fullscreen -e ani-cli"
-Name=ani-cli' > $HOME/.local/share/applications/ani-cli.desktop
-```
-The .desktop entry will allow to start ani-cli in Konsole directly from "Gaming Mode"
-In Steam Desktop app:
-`Add game` > `Add a non-steam game` > tick a box for `ani-cli` > `Add selected programs`
-</details>
-
-<details><summary><b>FreeBSD</b></summary>
-
-#### Copypaste script:
-
-```sh
-sudo pkg install mpv fzf yt-dlp patch git
-git clone "https://github.com/pystardust/ani-cli.git"
-sudo cp ani-cli/ani-cli /usr/local/bin
-rm -rf ani-cli
-```
-
-#### Installation in steps:
-
-##### Install dependencies:
-
-```sh
-sudo pkg install mpv fzf yt-dlp patch
-```
-
-##### Install ani-cli:
-
-install git if you haven't already
-
-```sh
-sudo pkg install git
-```
-
-install from source:
-
-```sh
-git clone "https://github.com/pystardust/ani-cli.git"
-sudo cp ani-cli/ani-cli /usr/local/bin
-rm -rf ani-cli
-```
-
-</details>
-
-<details><summary><b>Ubuntu Touch</b></summary>
-
-*Note: mpv is in desktop mode, so its a bit hard to navigate on a phone.*
-
-The problem is that you need to install and use nix for this to work, and for that you will need to use either <a href="https://next.open-store.io/app/nixmanager.chromiumos-guy/">NixManager</a> (GUI) or <a href="https://github.com/tuxecure/crackle">crackle</a> (CLI). we will be using crackle for copypaste script but feel free to use one or the other.
-
-#### Copypaste script:
-```sh
-wget -q -O - https://github.com/tuxecure/crackle/releases/latest/download/upgradefunc| bash -s setup
-crackle install ani-cli mpv
-```
-This can be achieved from NixManager as well, my personal recommendation is to use NixManager as GUI is easier to use on phones.
-
-</details>
-
-### Installing from source
-
-*This method works for any unix-like operating system and is a baseline for porting efforts.*
-
-Install dependencies [(See below)](#dependencies)
-
-```sh
-git clone "https://github.com/pystardust/ani-cli.git"
-sudo cp ani-cli/ani-cli /usr/local/bin
-rm -rf ani-cli
-```
-
-## Uninstall
-
-<details>
-
-* apt:
-```sh
-sudo apt remove ani-cli
-# to remove the repository from apt
-sudo rm -f /etc/apt/trusted.gpg.d/ani-cli.asc /etc/apt/sources.list.d/ani-cli-debian.list
-```
-* dnf:
-```sh
-sudo dnf remove ani-cli      # for ani-cli
-# disable the repo in dnf
-dnf copr disable derisis13/ani-cli
-```
-You might want to uninstall RPM fusion if you don't use it otherwise
-* zypper:
-```sh
-zypper remove ani-cli
-zypper removerepo ani-cli
-```
-You might want to remove `packman-essentials` if you don't need it otherwise
-* AUR:
-```sh
-yay -R ani-cli
-```
-* Scoop:
-```sh
-scoop uninstall ani-cli
-```
-* Linux:
-```sh
-sudo rm "/usr/local/bin/ani-cli"
-```
-* Mac:
-```sh
-brew uninstall ani-cli && brew untap pystardust/ani-cli
-```
-* Windows:
-In **Git Bash** run (as administrator):
-```sh
-rm "/usr/bin/ani-cli"
-```
-* Termux package
-```sh
-pkg remove ani-cli
-```
-* Android:
-```sh
-rm "$PREFIX/bin/ani-cli"
-```
-* Steam Deck
-```sh
-rm "~/.local/bin/ani-cli"
-rm -rf ~/.ani-cli
-```
-optionally: remove dependencies:
-```sh
-rm ~/.local/bin/yt-dlp
-rm -rf "~/.fzf"
-flatpak uninstall io.mpv.Mpv
-```
-* iOS
-```
-rm -rf /usr/local/bin/ani-cli
-```
-To uninstall other dependencies:
-```
-apk del grep sed curl fzf git ffmpeg ncurses
-```
-
-</details>
+fzf hanging at `Search anime:` is a terminal issue (mintty), not a fork issue. Use Windows Terminal with the Git Bash profile. See the "Known Problems" section of the [original README](https://github.com/pystardust/ani-cli#windows-known-problems-and-solutions) for more.
 
 ## Dependencies
 
-- grep
-- sed
-- curl
-- mpv - Video Player
-- iina - mpv replacement for MacOS
-- yt-dlp - m3u8 Downloader
-- ffmpeg - m3u8 Downloader (fallback)
-- fzf - User interface
-- ani-skip (optional, for auto-skipping anime intros)
-- patch - Self updating
+- `grep`, `sed`, `curl`
+- `mpv`: video player (or `iina` on Mac, `vlc` as an alternative)
+- `fzf`: interactive menu (or `rofi`/`dmenu`)
+- `yt-dlp` or `ffmpeg`: only needed for `-d`/download
+- `patch`: only needed for `-U`/self-update
+- `ani-skip`: optional, for skipping intros (`--skip`)
 
-### Ani-Skip
+If you get `Blocked by cloudflare`, install [curl-impersonate](https://github.com/lwthiker/curl-impersonate).
 
-Ani-skip is a script to automatically skip anime opening sequences, making it easier to watch your favorite shows without having to manually skip the intros each time (from the original [README](https://github.com/synacktraa/ani-skip/tree/master#a-script-to-automatically-skip-anime-opening-sequences-making-it-easier-to-watch-your-favorite-shows-without-having-to-manually-skip-the-intros-each-time)).
+## Usage
 
-For install instructions visit [ani-skip](https://github.com/synacktraa/ani-skip).
+```sh
+ani-cli [options] [query]
+```
 
-Ani-skip uses the external lua script function of mpv and as such – for now – only works with mpv.
+### Main options
 
-**Warning:** For now, ani-skip does **not** seem to work under Windows.
+```
+  -p, --provider          Content source (anidb, animefire, animesdigital)
+  -q, --quality           Video quality
+  -e, --episode, -r       Episode or range (e.g. -e 5-8)
+  --all                   Select every episode (use with -d to batch-download a series)
+  --dub                   Play the dubbed version
+  -d, --download          Download instead of playing
+  -c, --continue          Continue from history
+  --marathon              Play the next episode of every series in history, in sequence
+  -S, --select-nth        Pick the Nth result without an interactive menu
+  -v, --vlc               Use VLC
+  -s, --syncplay          Watch together via Syncplay
+  --skip                  Skip intro (ani-skip, mpv)
+```
+
+### Utility commands
+
+```
+  --stats                 Local watch stats from history
+  --check-providers       Check which sources are currently reachable
+  --export <file>         Export history
+  --import <file>         Import/merge history
+  -D, --delete            Delete history
+  --watch                 One-off check for new episodes (for cron/systemd timer)
+  -N, --nextep-countdown  Countdown to the next episode
+  -U, --update            Update the script (pulls from the configured branch)
+  -V, --version           Version
+  -h, --help              Full help
+```
+
+### Examples
+
+```sh
+ani-cli -p animefire --dub one piece
+ani-cli -p animesdigital -q 720p banana fish
+ani-cli --marathon
+ani-cli -d --all mushoku tensei III
+ani-cli --check-providers
+ani-cli --stats
+```
+
+## Configuration
+
+Besides the `ANI_CLI_*` environment variables (same convention as the original project: `ANI_CLI_QUALITY`, `ANI_CLI_PLAYER`, `ANI_CLI_MODE`, etc), this fork reads an optional config file:
+
+```sh
+# ~/.config/ani-cli/config  (or $ANI_CLI_CONFIG)
+ANI_CLI_QUALITY=720
+ANI_CLI_PROVIDER=animefire
+ANI_CLI_CACHE_TTL=10
+```
+
+New variables in this fork: `ANI_CLI_PROVIDER`, `ANI_CLI_CACHE_DIR`, `ANI_CLI_CACHE_TTL`, `ANI_CLI_TIMEOUT`, `ANI_CLI_CONFIG`.
 
 ## FAQ
-<details>
-	
-* Can I change subtitle language or turn them off? - No, the subtitles are baked into the video.
-* Can I watch dub? - Yes, use `--dub`.
-* Can I change dub language? - No.
-* Can I change media source? - No (unless you can scrape that source yourself).
-* Can I use vlc? - Yes, use `--vlc` or `export ANI_CLI_PLAYER=vlc`.
-* Can I adjust resolution? - Yes, use `-q resolution`, for example `ani-cli -q 1080`.
-* How can I download? - Use `-d`, it will download into your working directory.
-* Can i change download folder? - Yes, set the `ANI_CLI_DOWNLOAD_DIR` to your desired location.
-* How can I bulk download? - `Use -d -e firstepisode-lastepisode`, for example `ani-cli onepiece -d -e 1-1000`.
 
-**Note:** All features are documented in `ani-cli --help`.
+- **Can I change the subtitle language?** No. Subtitles are baked into the video, the site decides that, not ani-cli.
+- **How does streaming work?** It plays straight from the URL, nothing is saved to disk (unless you use `-d`).
+- **Does the cache store video?** No. Only search results and episode lists (short TTL). Video links are never cached, they're signed and expire.
+- **Why isn't my favorite site on the list?** It was probably investigated and blocked by third-party infrastructure, see the limitations section above. Reverse-engineering contributions are welcome.
 
-</details>
+More general questions (install, players, etc): [original project's FAQ](https://github.com/pystardust/ani-cli#faq).
 
-## Homies
+## Legal notice
 
-* [ani-cli-rs](https://github.com/vorlie/ani-cli-rs): A cross-platform Rust port of ani-cli with two independent Anikoto catalogs and native MegaPlay/KotoCDN playback. (Rust)
-* [jerry](https://github.com/justchokingaround/jerry): stream anime with anilist tracking and syncing, with discord presence (Shell)
-* [anipy-cli](https://github.com/sdaqo/anipy-cli): ani-cli rewritten in python (Python)
-* [mov-cli](https://github.com/mov-cli/mov-cli): Watch everything from your terminal. (Python)
-* [doccli](https://github.com/TowarzyszFatCat/doccli): [LINUX / WINDOWS] A CLI to watch anime with ENGLISH sub/dub or POLISH subtitles options, AniList integration, Discord RPC, and native Windows installer (Python)
-* [GoAnime](https://github.com/alvarorichard/GoAnime): A TUI tool to browse, play, and download anime in Portuguese and English, with Discord RPC, AniList integration, and intro skipping. (Go)
-* [Curd](https://github.com/Wraient/curd): A CLI tool to watch anime with Anilist, Discord RPC, Skip Intro/Outro/Filler/Recap (Go)
-* [ani-skip](https://github.com/synacktraa/ani-skip): Automatically skip opening and ending sequences for IINA on MacOS (Typescript, official IINA plugin API)
+This project accesses publicly hosted content from unaffiliated third parties, the same way a regular browser does, just more directly and specifically. Use at your own risk, subject to the laws of your country. See the original project's [disclaimer.md](disclaimer.md) for full details, including the DMCA/copyright process.
+
+## License and credits
+
+Licensed under **GPL-3.0**, same license as the original project. See [LICENSE](LICENSE).
+
+- **Original project:** [pystardust/ani-cli](https://github.com/pystardust/ani-cli), by [pystardust](https://github.com/pystardust)/[port19x](https://github.com/port19x) and contributors
+- **This fork:** multi-provider support, multi-source history, and the QoL utilities described above
+
+Being GPL-3.0, this fork is and remains free software: you can copy it, modify it, and redistribute it, as long as you keep the same license and credit the original project. See the full text in [LICENSE](LICENSE).
