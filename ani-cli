@@ -57,6 +57,10 @@ help_info() {
         Download the video instead of playing it
       -D, --delete
         Delete history
+      --export <file>
+        Export history to a file
+      --import <file>
+        Merge history from a file
       -l, --logview
         Show logs
       -s, --syncplay
@@ -152,7 +156,7 @@ cleanup() {
 
 #shellcheck disable=SC2086
 anidb_curl() {
-    $curl_exe -sL -A "$agent" --max-time 10 $cipher_flag "$@"
+    $curl_exe -sL -A "$agent" --max-time "$curl_timeout" --retry 2 --retry-delay 1 $cipher_flag "$@"
 }
 
 # search the query and give results. format is (id \t name)
@@ -300,6 +304,18 @@ time_until_next_ep() {
     exit 0
 }
 
+# best-effort status badge for the selected anime, silent on failure
+show_status() {
+    _status="$($curl_exe -s -G --max-time "$curl_timeout" "https://animeschedule.net/api/v3/anime" --data "q=$(printf "%s" "$1" | tr ' ' '+')" 2>/dev/null | sed -nE 's|.*"status":"([^"]*)".*|\1|p' | head -n 1)"
+    [ -z "$_status" ] && return 0
+    case "$_status" in
+        Ongoing) _color="33" ;;
+        Finished) _color="32" ;;
+        *) _color="36" ;;
+    esac
+    printf "\033[1;%sm[%s]\033[0m\n" "$_color" "$_status"
+}
+
 # HISTORY
 
 backup_old_hist() {
@@ -317,6 +333,22 @@ process_hist_entry() {
     ep_list=$(anidb_episodes "$anime_id" | cut -f 2)
     ep_no=$(printf "%s" "$ep_list" | sed -n "/^${ep_no}$/{n;p;}") 2>/dev/null
     [ -n "$ep_no" ] && printf "%s\t%s - episode %s\n" "$anime_id" "$anime_title" "$ep_no"
+}
+
+# warns if $ep_no was already watched (or passed) for $anime_id, per histfile
+check_rewatch() {
+    printf "%s" "$ep_no" | grep -qE '^[0-9]+(\.[0-9]+)?$' || return 0
+    _saved="$(grep "	${anime_id}	" "$histfile" | cut -f 1)"
+    [ -z "$_saved" ] && return 0
+    _max="$(printf '%s\n%s\n' "$_saved" "$ep_no" | sort -g | tail -n 1)"
+    if [ "$_max" = "$_saved" ]; then
+        printf "\033[1;33mVocê já assistiu até o episódio %s. Assistir de novo o episódio %s? [y/N]\033[0m " "$_saved" "$ep_no"
+        read -r _confirm
+        case "$_confirm" in
+            y | Y) ;;
+            *) exit 0 ;;
+        esac
+    fi
 }
 
 update_history() {
@@ -439,6 +471,7 @@ agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
 
 mode="${ANI_CLI_MODE:-sub}"
 provider="${ANI_CLI_PROVIDER:-}"
+curl_timeout="${ANI_CLI_TIMEOUT:-10}"
 download_dir="${ANI_CLI_DOWNLOAD_DIR:-.}"
 log_episode="${ANI_CLI_LOG:-1}"
 quality="${ANI_CLI_QUALITY:-best}"
@@ -523,6 +556,20 @@ while [ $# -gt 0 ]; do
             : >"$histfile"
             exit 0
             ;;
+        --export)
+            [ $# -lt 2 ] && die "missing argument!"
+            cp "$histfile" "$2" && info "History exported to $2"
+            exit 0
+            ;;
+        --import)
+            [ $# -lt 2 ] && die "missing argument!"
+            [ -f "$2" ] || die "File not found: $2"
+            while IFS="	" read -r ep_no anime_id anime_title; do
+                [ -n "$anime_id" ] && update_history
+            done <"$2"
+            info "History imported from $2"
+            exit 0
+            ;;
         -l | --logview)
             case "$(uname -s)" in
                 Darwin*) log show --predicate 'process == "logger"' ;;
@@ -588,6 +635,7 @@ case "$source" in
         [ -z "${index##*[!0-9]*}" ] || anime_id=$(printf "%s" "$anime_list" | sed -n "${index}p" | cut -f 1)
         [ -z "$anime_id" ] && exit 1
         anime_title=$(printf "%s" "$anime_list" | grep "^$anime_id	" | cut -f 2 | sed 's| - episode.*||')
+        show_status "$anime_title"
         anidb_desc "$anime_id" || true
         episode_maps="$(anidb_episodes "$anime_id")"
         ep_list="$(printf "%s" "$episode_maps" | cut -f 2)"
@@ -620,6 +668,7 @@ case "$source" in
         [ -z "$result" ] && die "Invalid anime selection"
         anime_title="$(printf "%s" "$result" | cut -f 2)"
         anime_id="$(printf "%s" "$result" | cut -f 1)"
+        show_status "$anime_title"
         if [ "$provider" = "animefire" ]; then
             ep_list="$(animefire_episodes "$anime_id")"
         else
@@ -638,6 +687,7 @@ tput cuu1 && tput el
 tput sc
 
 # playback & loop
+[ "$source" = "history" ] || [ "$player_function" = "download" ] || [ "$player_function" = "debug" ] || check_rewatch
 play
 [ "$player_function" = "download" ] || [ "$player_function" = "debug" ] && exit 0
 
